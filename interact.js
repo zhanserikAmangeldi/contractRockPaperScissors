@@ -21,7 +21,7 @@ async function main() {
 
     // await play(contract, deployer)
 
-    await playMultiplayer(contract, deployer, player2);
+    // await playMultiplayer(contract, deployer, player2);
 
 
     const stats1 = await contract.getPlayerStats(deployer.address);
