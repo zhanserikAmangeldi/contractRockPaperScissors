@@ -8,7 +8,7 @@ export default {
   networks: {
     testnet: {
       url: process.env.RPC_URL,
-      accounts: [process.env.PRIVATE_KEY],
+      accounts: [process.env.PRIVATE_KEY, process.env.PRIVATE_KEY_2],
     },
   },
 };

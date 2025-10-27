@@ -20,3 +20,4 @@ Thumbs.db
 # Hardhat
 cache/
 artifacts/
+typechain-types/

@@ -8,6 +8,7 @@ contract RockPaperScissors is VRFConsumerBaseV2Plus {
 
     address public gameOwner;
     uint public totalGames;
+    uint public totalMultiplayerGames;
     uint public betAmount;
     uint public houseEdge;
 
@@ -28,10 +29,24 @@ contract RockPaperScissors is VRFConsumerBaseV2Plus {
     }
 
     mapping(uint256 => SingleGameRequest) public singleGameRequests;
-
     mapping(address => uint) public wins;
     mapping(address => uint) public losses;
     mapping(address => uint) public totalProfits;
+
+    
+    struct MultiplayerGame {
+        address player1;
+        address player2;
+        uint8 player1Choice;
+        uint8 player2Choice;
+        bool player1Committed;
+        bool player2Committed;
+        uint256 betAmount;
+        bool finished;
+    }
+    
+    mapping(uint256 => MultiplayerGame) public multiplayerGames;
+
 
     modifier onlyGameOwner() {
         require(msg.sender == gameOwner, "Only the game owner can call this function");
@@ -45,6 +60,9 @@ contract RockPaperScissors is VRFConsumerBaseV2Plus {
 
     event SingleGameStarted(uint256 requestId, address player);
     event SingleGameResult(address player, uint256 playerChoice, uint256 houseChoice, uint256 result, uint256 payout);
+    event MultiplayerGameCreated(uint256 indexed gameId, address indexed player1);
+    event MultiplayerGameJoined(uint256 indexed gameId, address indexed player2);
+    event MultiplayerGameResult(uint256 indexed gameId, address winner, uint256 payout);
 
 
     constructor(
@@ -128,6 +146,87 @@ contract RockPaperScissors is VRFConsumerBaseV2Plus {
 
         gameRequest.fulfilled = true;
         emit SingleGameResult(player, gameRequest.playerChoice, houseChoice, result, payout);
+    }
+
+    function createMultiplayerGame() external payable returns (uint256) {
+        require(msg.value == betAmount, "Incorrect bet");
+
+        totalMultiplayerGames++;
+        multiplayerGames[totalMultiplayerGames] = MultiplayerGame({
+            player1: msg.sender,
+            player2: address(0),
+            player1Choice: 0,
+            player2Choice: 0,
+            player1Committed: false,
+            player2Committed: false,
+            betAmount: msg.value,
+            finished: false
+        });
+
+        emit MultiplayerGameCreated(totalMultiplayerGames, msg.sender);
+        return totalMultiplayerGames;
+    }
+
+    function joinMultiplayerGame(uint256 gameId) external payable {
+        MultiplayerGame storage game = multiplayerGames[gameId];
+        require(game.player1 != address(0), "Game does not exist");
+        require(game.player2 == address(0), "Game already has two players");
+        require(msg.value == game.betAmount, "Incorrect bet");
+
+        game.player2 = msg.sender;
+        emit MultiplayerGameJoined(gameId, msg.sender);
+    }
+
+    function makeMove(uint256 gameId, uint8 choice) external validMove(choice) {
+        MultiplayerGame storage game = multiplayerGames[gameId];
+        require(!game.finished, "Game finished");
+        require(game.player1 != address(0) && game.player2 != address(0), "Game not ready");
+
+        if (msg.sender == game.player1) {
+            require(!game.player1Committed, "Already made move");
+            game.player1Choice = choice;
+            game.player1Committed = true;
+        } else if (msg.sender == game.player2) {
+            require(!game.player2Committed, "Already made move");
+            game.player2Choice = choice;
+            game.player2Committed = true;
+        } else {
+            revert("Not a player in this game");
+        }
+
+        if (game.player1Committed && game.player2Committed) {
+            _resolveMultiplayerGame(gameId);
+        }
+    }
+
+    function _resolveMultiplayerGame(uint256 gameId) internal {
+        MultiplayerGame storage game = multiplayerGames[gameId];
+        uint result = calculateWinner(game.player1Choice, game.player2Choice);
+        uint256 pot = game.betAmount * 2;
+        uint256 houseEdgePart = (pot * houseEdge) / 10000;
+        uint256 payout = pot - houseEdgePart;
+        address winner;
+
+        if (result == 0) {
+            (bool s1, ) = game.player1.call{value: game.betAmount}("");
+            (bool s2, ) = game.player2.call{value: game.betAmount}("");
+            require(s1 && s2, "Refund failed");
+        } else if (result == 1) {
+            winner = game.player1;
+            (bool success, ) = winner.call{value: payout}("");
+            require(success, "Payout failed");
+            wins[winner]++;
+            losses[game.player2]++;
+        } else {
+            winner = game.player2;
+            (bool success, ) = winner.call{value: payout}("");
+            require(success, "Payout failed");
+            wins[winner]++;
+            losses[game.player1]++;
+        }
+
+        game.finished = true;
+        emit MultiplayerGameResult(gameId, winner, payout);
     }
 
     // Utility function
