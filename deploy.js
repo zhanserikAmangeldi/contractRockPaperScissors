@@ -1,25 +1,29 @@
-const ethers = require("ethers")
-const fs = require("fs")
+import pkg from "hardhat";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const { ethers } = pkg;
 
 async function main() {
-    const provider = new ethers.JsonRpcProvider(process.env.RPC_URL)
+  console.log("Deploying RockPaperScissors...");
 
-    const account = new ethers.Wallet(process.env.PRIVATE_KEY, provider)
+  const RockPaperScissors = await ethers.getContractFactory("RockPaperScissors");
 
-    const abi = fs.readFileSync("./contracts/RockPaperScissors_sol_RockPaperScissors.abi", "utf-8")
-    const binary = fs.readFileSync("./contracts/RockPaperScissors_sol_RockPaperScissors.bin", "utf-8")
+  const contract = await RockPaperScissors.deploy(
+    ethers.parseEther(process.env.BET_AMOUNT),
+    process.env.HOUSE_EDGE,
+    process.env.SUBSCRIPTION_ID,
+    process.env.VRF_COORDINATOR,
+    process.env.KEY_HASH,
+  );
 
-    const contractFactory = new ethers.ContractFactory(abi, binary, account)
-    console.log("Deploying...")
-    const contract = await contractFactory.deploy()
+  await contract.waitForDeployment();
 
-    console.log(contract)
-    const deploymentReceipt = await contract.deploymentTransaction().wait(1)
-    console.log(deploymentReceipt)
-    console.log(`Contract address: ${contract.getAddress()}`)
+  console.log(`Contract deployed at: ${await contract.getAddress()}`);
 }
 
-main().then(() => process.exit(0)).catch((error) => {
-    console.error(error)
-    process.exit(1)
-})
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
